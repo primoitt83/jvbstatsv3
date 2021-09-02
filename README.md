@@ -1,2 +1,0 @@
-# jvbStatsV3
-
