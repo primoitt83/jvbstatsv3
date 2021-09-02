@@ -1,0 +1,81 @@
+#!/bin/bash
+#Definir valores default
+CONFIG_PASTA=./config
+RESTART_POLICY=unless-stopped
+INFLUXDB_PORTA=8086
+INFLUXDB=jitsi
+GRAFANA_PORTA=3000
+JITSI_HOST=servidor_jitsi
+ENDERECO_SRV_JITSIBRIDGE=localhost
+PORTA_API_REST=8081
+
+uid=`date +%s`
+
+# Carregar arquivo de config
+. jitsi-stats.conf
+
+escrever_env (){
+  cat <<EOF> .env
+CONFIG_PASTA=$CONFIG_PASTA
+RESTART_POLICY=$RESTART_POLICY
+INFLUXDB_PORTA=$INFLUXDB_PORTA
+GRAFANA_PORTA=$GRAFANA_PORTA
+EOF
+}
+
+escrever_telegraf_config(){
+  cat <<EOF> $CONFIG_PASTA/telegraf/telegraf.conf
+[global_tags]
+
+###############################################################################
+#                                  GLOBAL                                     #
+###############################################################################
+
+[agent]
+    interval = "10s"
+    debug = false
+    hostname = "$JITSI_HOST"
+    round_interval = true
+    flush_interval = "10s"
+    flush_jitter = "0s"
+    collection_jitter = "0s"
+    metric_batch_size = 1000
+    metric_buffer_limit = 10000
+    quiet = false
+    logfile = ""
+    omit_hostname = false
+
+
+###############################################################################
+#                                  INPUTS                                     #
+###############################################################################
+
+[[inputs.http]]
+    name_override = "jitsi_stats"
+    urls = [
+      "http://$ENDERECO_SRV_JITSIBRIDGE:$PORTA_API_REST/colibri/stats"
+    ]
+
+    data_format = "json"
+
+###############################################################################
+#                                  OUTPUTS                                    #
+###############################################################################
+
+[[outputs.influxdb]]
+    urls = ["http://influxdb:8086"]
+    database = "$INFLUXDB"
+    timeout = "0s"
+    retention_policy = ""
+EOF
+ }
+
+escrever_env
+escrever_telegraf_config
+docker-compose up -d
+while ! curl -G -s http://localhost:$INFLUXDB_PORTA/query --data-urlencode "q=CREATE DATABASE $INFLUXDB"; do
+  echo "Aguardando banco de dados subir em localhost:$INFLUXDB_PORTA"
+  sleep 1
+done
+
+echo -e '\n\nInstalação concluída'
